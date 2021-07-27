@@ -53,13 +53,17 @@ import okhttp3.OkHttpClient;
 
 public class MutualTlsClientBuilder {
 
-    private static final char[] PASSWORD = "nopassword".toCharArray();
+    private static final char[] DEFAULT_TRANSIENT_PASSWORD = "nopassword".toCharArray();
 
     private URL clientKeyUrl;
 
     private URL caUrl;
 
     private URL clientCertUrl;
+
+    private URL jksUrl;
+
+    private char[] password;
 
     /**
      * Configure the builder with a list of root CAs
@@ -106,6 +110,20 @@ public class MutualTlsClientBuilder {
         return this;
     }
 
+    public MutualTlsClientBuilder withJKS(URL jksUrl) {
+        if (Objects.nonNull(jksUrl)) {
+            this.jksUrl = jksUrl;
+        } else {
+            throw new IllegalStateException("JKS cert file not found");
+        }
+        return this;
+    }
+
+    public MutualTlsClientBuilder withPassword(char[] password) {
+        this.password = password;
+        return this;
+    }
+
     /**
      * Builds the OkHttp client with TLS configured
      *
@@ -117,7 +135,7 @@ public class MutualTlsClientBuilder {
             var ks = buildKeyStore();
 
             var kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-            kmf.init(ks, PASSWORD);
+            kmf.init(ks, jksUrl != null ? password : DEFAULT_TRANSIENT_PASSWORD);
             var tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
             tmf.init(ks);
 
@@ -146,21 +164,30 @@ public class MutualTlsClientBuilder {
     }
 
     private KeyStore buildKeyStore() throws IOException {
+
         try {
+            if (jksUrl != null) {
+                try (var in = jksUrl.openStream()) {
+                    var ks = KeyStore.getInstance("JKS");
+                    ks.load(in, this.password);
+                    return ks;
+                }
+            } else {
 
-            // Creates an empty keyStore
-            var keyStore = newEmptyKeyStore(PASSWORD);
+                // Creates an empty keyStore
+                var keyStore = newEmptyKeyStore(DEFAULT_TRANSIENT_PASSWORD);
 
-            // Load the CAs : the server one and the client cert one
-            loadCA(keyStore, this.caUrl);
+                // Load the CAs : the server one and the client cert one
+                loadCA(keyStore, this.caUrl);
 
-            if (Objects.nonNull(clientCertUrl) && Objects.nonNull(clientKeyUrl)) {
-                // Load the client key
-                loadKey(keyStore, clientCertUrl, clientKeyUrl);
+                if (Objects.nonNull(clientCertUrl) && Objects.nonNull(clientKeyUrl)) {
+                    // Load the client key
+                    loadKey(keyStore, clientCertUrl, clientKeyUrl);
+                }
+
+                return keyStore;
+
             }
-
-            return keyStore;
-
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("Some error happen during keystore build", e);
         }
@@ -205,7 +232,7 @@ public class MutualTlsClientBuilder {
         var kf = KeyFactory.getInstance("RSA");
         var privateKey = kf.generatePrivate(keySpec);
 
-        keyStore.setKeyEntry("client", privateKey, PASSWORD, certs.toArray(new Certificate[] {}));
+        keyStore.setKeyEntry("client", privateKey, DEFAULT_TRANSIENT_PASSWORD, certs.toArray(new Certificate[] {}));
 
     }
 

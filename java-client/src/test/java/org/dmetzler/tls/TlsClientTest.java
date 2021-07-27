@@ -30,7 +30,6 @@ public class TlsClientTest {
 
     private static final String URL = "http://nginx.local/index.html";
 
-
     @Test
     public void query_endpoint_without_cert_results_in_403() throws Exception {
         OkHttpClient client = new OkHttpClient();
@@ -49,6 +48,20 @@ public class TlsClientTest {
                                                  .withCA(getUrl("/ca.crt"))//
                                                  .withClientKey(getUrl("/client.pk8"))//
                                                  .withClientCert(getUrl("/client.crt"))//
+                                                 .build();
+
+        Request request = new Request.Builder().url(URL).build();
+
+        try (Response response = client.newCall(request).execute()) {
+            assertThat(response.code()).isEqualTo(200);
+        }
+    }
+
+    @Test
+    public void mutual_tls_build_with_jks() throws Exception {
+        var client = new MutualTlsClientBuilder()//
+                                                 .withJKS(getUrl("/client.jks"))//
+                                                 .withPassword("changeit".toCharArray())
                                                  .build();
 
         Request request = new Request.Builder().url(URL).build();
